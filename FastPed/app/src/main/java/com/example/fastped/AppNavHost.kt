@@ -157,6 +157,42 @@ fun AppNavHost() {
             composable("cart") {
                 CartScreen(navController, currentDni!!)
             }
+
+            // Checkout
+            composable(
+                route = "checkout/{dni}",
+                arguments = listOf(
+                    navArgument("dni") { type = NavType.StringType }
+                )
+            ) { back ->
+                val dni = back.arguments!!.getString("dni")!!
+                CheckoutScreen(
+                    // aquí debes usar `nav = navController`
+                    nav        = navController,
+                    currentDni = dni
+                )
+            }
+            // Payment (pasa la instancia aquí)
+            composable(
+                route = "payment/{dni}/{storeId}/{amount}",
+                arguments = listOf(
+                    navArgument("dni")      { type = NavType.StringType },
+                    navArgument("storeId")  { type = NavType.StringType },
+                    navArgument("amount")   { type = NavType.IntType }
+                )
+            ) { back ->
+                val dni     = back.arguments!!.getString("dni")!!
+                val storeId = back.arguments!!.getString("storeId")!!
+                val amount  = back.arguments!!.getInt("amount")
+                // Llamada CORRECTA al PaymentScreen Compose-only:
+                PaymentScreen(
+                    navController = navController,
+                    currentDni    = dni,
+                    storeId       = storeId,
+                    amount        = amount
+                )
+            }
+
             composable("notif") { /* TODO */ }
 
             // PROFILE
