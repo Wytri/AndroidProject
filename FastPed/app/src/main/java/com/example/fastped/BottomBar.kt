@@ -28,7 +28,6 @@ fun BottomBar(
         BottomNavItem("home",        Icons.Default.Home),
         BottomNavItem("cart",        Icons.Default.ShoppingCart),
         BottomNavItem("notif",       Icons.Default.Notifications),
-        BottomNavItem("profile",     Icons.Default.Person)
     )
 
     // obtenemos la ruta actual, por ejemplo "home" o "profile/123456"

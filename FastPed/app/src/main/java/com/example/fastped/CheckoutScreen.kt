@@ -81,7 +81,7 @@ fun CheckoutScreen(
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("Resumen de pedido\"") },
+                title = { Text("Resumen de pedido") },
                 actions = {
                     IconButton(onClick = { nav.popBackStack() }) {
                         Icon(

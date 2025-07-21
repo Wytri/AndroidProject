@@ -62,7 +62,7 @@ fun RegistrationScreen(onSubmit: (String, String) -> Unit) {
             onValueChange = {
                 if (it.all(Char::isDigit) && it.length <= 8) dni = it
             },
-            label = { Text("DNI") },
+            label = { Text("DNI/Passport/CE") },
             leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
             isError = dniError,
             singleLine = true,
@@ -71,7 +71,7 @@ fun RegistrationScreen(onSubmit: (String, String) -> Unit) {
         )
         if (dniError) {
             Text(
-                "Debe ingresar su DNI",
+                "Debe ingresar su DNI/Passport/CE",
                 color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.align(Alignment.Start)
