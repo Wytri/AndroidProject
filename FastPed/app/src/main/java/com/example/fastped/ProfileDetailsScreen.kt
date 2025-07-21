@@ -1,7 +1,9 @@
 package com.example.fastped
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.material3.ExposedDropdownMenuDefaults.TrailingIcon
 import androidx.compose.runtime.*
@@ -44,11 +46,15 @@ fun ProfileDetailsScreen(
     var pinError    by remember { mutableStateOf(false) }
     var matchError  by remember { mutableStateOf(false) }
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.Center,
+            .padding(24.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState()),  // <— hacemos scroll
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text("Completa tus datos", style = MaterialTheme.typography.headlineMedium)
@@ -222,6 +228,6 @@ fun ProfileDetailsScreen(
         ) {
             Text("GUARDAR USUARIO")
         }
+        }
     }
 }
-
