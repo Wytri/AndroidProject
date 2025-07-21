@@ -17,6 +17,8 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // Necesario para llamadas HTTPS a Firebase Functions:
+        missingDimensionStrategy("react-native-camera", "general")
     }
 
     buildTypes {
@@ -41,6 +43,13 @@ android {
 }
 
 dependencies {
+
+    // Stripe Android
+    implementation("com.stripe:stripe-android:21.20.2")
+    implementation("com.squareup.okhttp3:okhttp:4.9.3")
+// Firebase Functions (para invocar tu Cloud Function)
+    implementation("com.google.firebase:firebase-functions-ktx:20.1.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.0")
     // ... other dependencies
     implementation("androidx.compose.material:material-icons-core:1.6.0") // Or the latest version
     implementation("androidx.compose.material:material-icons-extended:1.6.0") // Or the latest version (optional, for more icons)
@@ -72,18 +81,7 @@ dependencies {
     implementation(libs.androidx.navigation.compose.android)
     implementation(libs.androidx.room.common.jvm)
     implementation(libs.androidx.room.runtime.android)
-    implementation(libs.junit.junit)
-    implementation(libs.androidx.junit.ktx)
     testImplementation(libs.junit)
-    testImplementation("junit:junit:4.13.2")
-    testImplementation("org.mockito:mockito-core:4.6.1")
-    androidTestImplementation("androidx.test.ext:junit:1.1.5")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
-    androidTestImplementation("androidx.test:rules:1.5.0")
-    androidTestImplementation("androidx.test:runner:1.5.2")
-    implementation("com.jakewharton.threetenabp:threetenabp:1.4.5")
-    implementation("com.google.firebase:firebase-firestore-ktx:24.5.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
