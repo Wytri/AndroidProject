@@ -34,10 +34,11 @@ fun WorkPlaceScreen(
 ) {
     val db = Firebase.firestore
 
-    var permissions by remember { mutableStateOf<List<String>?>(null) }
-    var isLoading  by remember { mutableStateOf(true) }
-    var errorMsg   by remember { mutableStateOf<String?>(null) }
-    var selectedTab by remember { mutableStateOf(0) }
+    var permissions      by remember { mutableStateOf<List<String>?>(null) }
+    var isLoading        by remember { mutableStateOf(true) }
+    var errorMsg         by remember { mutableStateOf<String?>(null) }
+    var waitingForRole   by remember { mutableStateOf(false) }
+    var selectedTab      by remember { mutableStateOf(0) }
 
     // 1) Cargo roleId del miembro → 2) Cargo lista de permisos
     LaunchedEffect(storeId, userDni) {
@@ -49,9 +50,14 @@ fun WorkPlaceScreen(
                 .get()
                 .await()
 
+            // Si el doc existe pero no hay roleId asignado, esperamos
             val roleId = memberSnap.getString("roleId")
-                ?: throw IllegalStateException("Este usuario no es miembro de la tienda")
+            if (roleId.isNullOrBlank()) {
+                waitingForRole = true
+                return@LaunchedEffect
+            }
 
+            // Si sí hay roleId, vamos por sus permisos
             val roleSnap = db.collection("stores")
                 .document(storeId)
                 .collection("roles")
@@ -68,13 +74,25 @@ fun WorkPlaceScreen(
         }
     }
 
-    // Mostrar loading / error
+    // ------------- UI -------------
     if (isLoading) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
         }
         return
     }
+
+    // Mostrar mensaje de “espera de rol”
+    if (waitingForRole) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("Tu cuenta está pendiente de asignación de rol.\nPor favor espera unos minutos.\nSi esto continua comunicarse con el encargado.",
+                style = MaterialTheme.typography.bodyLarge,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        }
+        return
+    }
+
+    // Errores distintos a “espera”
     errorMsg?.let { msg ->
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text("Error: $msg")
@@ -82,35 +100,24 @@ fun WorkPlaceScreen(
         return
     }
 
-    // Si es Admin le damos todas las pestañas
+    // Si pasamos todos los checks, construimos las pestañas según permisos
+    // (idéntico al tu código anterior)
     val effectivePerms = if (permissions!!.contains("Administrador")) {
         listOf("Recepcionista","Cocinero","Despachador","Contabilidad","Administrador")
     } else {
         permissions!!
     }
 
-    // Definimos las pestañas según permisos
     val tabs = effectivePerms.mapNotNull { perm ->
         when (perm) {
-            "Recepcionista"  -> TabItem("Recepción",   Icons.Default.RoomService) {
-                RecepcionistaScreen(storeId)
-            }
-            "Cocinero"       -> TabItem("Cocina",       Icons.Default.Kitchen) {
-                CocineroScreen(storeId, userDni)
-            }
-            "Despachador"    -> TabItem("Despacho",     Icons.Default.LocalShipping) {
-                DespachadorScreen(storeId, userDni)
-            }
-            "Contabilidad"   -> TabItem("Contabilidad", Icons.Default.DateRange) {
-                ContabilidadScreen(storeId)
-            }
-            "Administrador"  -> TabItem("Admin",        Icons.Default.Settings) {
-                AdminScreen(storeId)
-            }
+            "Recepcionista"  -> TabItem("Recepción",   Icons.Default.RoomService) { RecepcionistaScreen(storeId) }
+            "Cocinero"       -> TabItem("Cocina",       Icons.Default.Kitchen)     { CocineroScreen(storeId, userDni) }
+            "Despachador"    -> TabItem("Despacho",     Icons.Default.LocalShipping){ DespachadorScreen(storeId, userDni) }
+            "Contabilidad"   -> TabItem("Contabilidad", Icons.Default.DateRange)    { ContabilidadScreen(storeId) }
+            "Administrador"  -> TabItem("Admin",        Icons.Default.Settings)     { AdminScreen(storeId) }
             else             -> null
         }
     }.ifEmpty {
-        // Sin permisos
         listOf(TabItem("Sin acceso", Icons.Default.Block) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("No tienes permisos asignados")
