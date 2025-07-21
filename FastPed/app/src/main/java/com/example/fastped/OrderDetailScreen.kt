@@ -69,7 +69,7 @@ fun OrderDetailScreen(
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("Detalle del Pedido\"") },
+                title = { Text("Detalle del Pedido") },
                 actions = {
                     IconButton(onClick = { nav.popBackStack() }) {
                         Icon(

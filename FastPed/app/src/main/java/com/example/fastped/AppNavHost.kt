@@ -3,15 +3,39 @@ package com.example.fastped
 
 import android.widget.Toast
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.GroupAdd
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Store
+import androidx.compose.material.icons.filled.Storefront
+import androidx.compose.material.icons.filled.Work
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Divider
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
@@ -29,29 +53,157 @@ fun AppNavHost() {
     val ctx           = LocalContext.current
     val scope         = rememberCoroutineScope()
 
-    var currentDni by remember { mutableStateOf<String?>(null) }
+    // 1) Estado de sesión
+    var currentDni  by remember { mutableStateOf<String?>(null) }
+    var currentUser by remember { mutableStateOf<Usuario?>(null) }
 
-    val backStack    by navController.currentBackStackEntryAsState()
-    val currentRoute = backStack?.destination?.route
-    val showBottomBar = when {
-        currentRoute == "home"                       -> true
-        currentRoute == "cart"                       -> true
-        currentRoute == "notif"                      -> true
-        currentRoute?.startsWith("profile/") == true -> currentDni != null
-        else                                         -> false
+    // 2) Cuando cambie el DNI, recarga todo el Usuario
+    LaunchedEffect(currentDni) {
+        currentUser = currentDni?.let { dni ->
+            val snap = db.collection("users").document(dni).get().await()
+            if (!snap.exists()) return@let null
+
+            Usuario(
+                email       = snap.getString("email").orEmpty(),
+                dni         = dni,
+                nombre      = snap.getString("nombre").orEmpty(),
+                apellido    = snap.getString("apellido").orEmpty(),
+                celular     = snap.getString("celular").orEmpty(),
+                pin         = snap.getString("pin").orEmpty(),
+                tipo        = snap.getLong("tipo")?.toInt() ?: 0,
+                sexo        = snap.getLong("sexo")?.toInt() ?: 0,
+                photoBase64 = snap.getString("photoBase64"),
+                tiendaId    = snap.getString("tiendaId")
+            )
+        }
+    }
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+
+    @Composable
+    fun DrawerContent() {
+        ModalDrawerSheet {
+            Text("Menú", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(16.dp))
+
+            // — Mi Perfil —
+            NavigationDrawerItem(
+                icon = { Icon(Icons.Default.Person, contentDescription = null) },
+                label = { Text("Mi Perfil") },
+                selected = false,
+                onClick = {
+                    scope.launch { drawerState.close() }
+                    currentDni?.let { navController.navigate("profile/$it") }
+                },
+                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+            )
+            Divider()
+
+            // — Historial de pedidos —
+            NavigationDrawerItem(
+                icon = { Icon(Icons.Default.History, contentDescription = null) },
+                label = { Text("Historial de pedidos") },
+                selected = false,
+                onClick = {
+                    scope.launch { drawerState.close() }
+                    navController.navigate("orderHistory")
+                },
+                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+            )
+
+            // — Tiendas favoritas —
+            NavigationDrawerItem(
+                icon = { Icon(Icons.Default.Favorite, contentDescription = null) },
+                label = { Text("Tiendas favoritas") },
+                selected = false,
+                onClick = {
+                    scope.launch { drawerState.close() }
+                    navController.navigate("favoriteStores")
+                },
+                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+            )
+            Divider()
+
+            // — Owner (tipo == 2) —
+            currentUser?.takeIf { it.tipo == 2 }?.let { user ->
+                if (user.tiendaId.isNullOrEmpty()) {
+                    NavigationDrawerItem(
+                        icon = { Icon(Icons.Default.Store, contentDescription = null) },
+                        label = { Text("Crear mi tienda") },
+                        selected = false,
+                        onClick = {
+                            scope.launch { drawerState.close() }
+                            navController.navigate("createStore/${user.dni}")
+                        },
+                        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                    )
+                } else {
+                    NavigationDrawerItem(
+                        icon = { Icon(Icons.Default.Storefront, contentDescription = null) },
+                        label = { Text("Mi tienda") },
+                        selected = false,
+                        onClick = {
+                            scope.launch { drawerState.close() }
+                            navController.navigate("myStore/${user.tiendaId}")
+                        },
+                        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                    )
+                }
+                Divider()
+            }
+
+            // — Trabajador (tipo == 3) —
+            currentUser?.takeIf { it.tipo == 3 }?.let { user ->
+                if (user.tiendaId.isNullOrEmpty()) {
+                    NavigationDrawerItem(
+                        icon = { Icon(Icons.Default.GroupAdd, contentDescription = null) },
+                        label = { Text("Registrarme en tienda") },
+                        selected = false,
+                        onClick = {
+                            scope.launch { drawerState.close() }
+                            navController.navigate("joinStore/${user.dni}")
+                        },
+                        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                    )
+                } else {
+                    NavigationDrawerItem(
+                        icon = { Icon(Icons.Default.Work, contentDescription = null) },
+                        label = { Text("Mi lugar de trabajo") },
+                        selected = false,
+                        onClick = {
+                            scope.launch { drawerState.close() }
+                            navController.navigate("workPlace/${user.tiendaId}")
+                        },
+                        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                    )
+                }
+                Divider()
+            }
+
+            Spacer(Modifier.weight(1f))
+
+            // — Cerrar sesión —
+            NavigationDrawerItem(
+                icon = { Icon(Icons.Default.Logout, contentDescription = null) },
+                label = { Text("Cerrar sesión") },
+                selected = false,
+                onClick = {
+                    scope.launch { drawerState.close() }
+                    currentDni = null
+                    navController.navigate("login") {
+                        popUpTo("home") { inclusive = true }
+                    }
+                },
+                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+            )
+        }
     }
 
-    Scaffold(
-        bottomBar = {
-            if (showBottomBar && currentDni != null) {
-                BottomBar(navController, currentDni!!)
-            }
-        }
-    ) { innerPadding ->
+    // 3) Función única con TODO tu NavGraph original
+    @Composable
+    fun MainNavHost(modifier: Modifier = Modifier) {
         NavHost(
             navController    = navController,
             startDestination = "login",
-            modifier         = Modifier.padding(innerPadding)
+            modifier         = modifier.fillMaxSize()
         ) {
             // LOGIN
             composable("login") {
@@ -402,4 +554,65 @@ fun AppNavHost() {
             }
         }
     }
+// 4) Renderizado: con o sin Drawer según sesión
+if (currentDni != null) {
+    // — Sesión iniciada: Drawer + TopBar + BottomBar + NavGraph
+    ModalNavigationDrawer(
+        drawerState   = drawerState,
+        drawerContent = { DrawerContent() }
+    ) {
+        Scaffold(
+            topBar = {
+                CenterAlignedTopAppBar(
+                    navigationIcon = {
+                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                            Icon(Icons.Default.Menu, contentDescription = "Menú")
+                        }
+                    },
+                    title = {
+                        val route = navController.currentDestination?.route
+                        Text(
+                            when {
+                                route == "home"                       -> "Inicio"
+                                route == "cart"                       -> "Carrito"
+                                route == "orderHistory"               -> "Historial"
+                                route?.startsWith("profile/") == true -> "Mi Perfil"
+                                else                                  -> ""
+                            }
+                        )
+                    }
+                )
+            },
+            bottomBar = {
+                val backStack    by navController.currentBackStackEntryAsState()
+                val currentRoute = backStack?.destination?.route
+                if (currentRoute in listOf("home", "cart", "notif")) {
+                    BottomBar(navController, currentDni!!)
+                }
+            }
+        ) { innerPadding ->
+
+            // solo extraemos la parte de padding de arriba:
+            //val topOnly = innerPadding.calculateTopPadding()
+
+            val top    = innerPadding.calculateTopPadding()
+            val bottom = innerPadding.calculateBottomPadding()
+
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .padding(top = top, bottom = bottom)
+            ) {
+                MainNavHost()  // tu NavHost como antes
+            }
+        }
+    }
+} else {
+    // — Antes de login: sin drawer, sin topBar, sin bottomBar
+    Scaffold { innerPadding ->
+        Box(Modifier.padding(innerPadding)) {
+            MainNavHost()
+        }
+    }
+}
 }

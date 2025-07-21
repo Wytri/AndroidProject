@@ -63,7 +63,7 @@ fun ProfileDetailsScreen(
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
             value = dni, onValueChange = {},
-            label = { Text("DNI") },
+            label = { Text("DNI/Passport/CE") },
             enabled = false, modifier = Modifier.fillMaxWidth()
         )
         Spacer(Modifier.height(16.dp))

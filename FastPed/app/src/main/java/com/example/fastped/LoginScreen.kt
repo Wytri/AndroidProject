@@ -81,7 +81,7 @@ fun LoginScreen(
                     dni = it
                 }
             },
-            label = { Text("DNI") },
+            label = { Text("DNI/Passport/CE") },
             singleLine = true,
             isError = dniError,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
