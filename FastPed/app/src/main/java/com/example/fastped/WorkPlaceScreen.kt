@@ -14,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.example.fastped.model.EstadosPedidoProducto
@@ -23,6 +24,12 @@ import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import java.security.Timestamp
+import java.text.DateFormat
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.ZoneId
+import java.util.Calendar
 
 // Combina un Pedido con sus productos
 private data class PedidoConProductos(
@@ -131,7 +138,7 @@ fun WorkPlaceScreen(
             "Cocinero"       -> TabItem("Cocina",       Icons.Default.Kitchen)     { CocineroScreen(storeId, userDni) }
             "Despachador"    -> TabItem("Despacho",     Icons.Default.LocalShipping){ DespachadorScreen(storeId, userDni) }
             "Contabilidad"   -> TabItem("Contabilidad", Icons.Default.DateRange)    { ContabilidadScreen(storeId) }
-            "Administrador"  -> TabItem("Admin",        Icons.Default.Settings)     { AdminScreen(storeId) }
+            "Administrador"  -> TabItem("Admin", Icons.Default.Settings)     { AdminScreen(nav, storeId, userDni) }
             else             -> null
         }
     }.ifEmpty {
@@ -608,15 +615,27 @@ fun DespachadorScreen(storeId: String, userDni: String) {
     }
 }
 
-
-
-@Composable fun ContabilidadScreen(storeId: String) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text("Contabilidad (pendiente)")
-    }
-}
-@Composable fun AdminScreen(storeId: String) {
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ContabilidadScreen(storeId: String) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Text("Administración (pendiente)")
     }
+}
+
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AdminScreen(
+    nav: NavHostController,
+    storeId: String,
+    currentDni: String
+) {
+    // Simplemente delega a StoreSettingsScreen, que ya contiene TODA la lógica de roles, RUC, etc.
+    StoreSettingsScreen(
+        nav = nav,
+        storeId = storeId,
+        currentDni = currentDni,
+        onBack = { nav.popBackStack() }
+    )
 }
