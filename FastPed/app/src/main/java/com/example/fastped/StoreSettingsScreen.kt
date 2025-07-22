@@ -43,6 +43,14 @@ fun StoreSettingsScreen(
     val ctx   = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    // — Determinar si es el dueño —
+    var isOwner by remember { mutableStateOf(false) }
+    LaunchedEffect(storeId) {
+        val doc = db.collection("stores").document(storeId).get().await()
+        if (doc.exists()) {
+            isOwner = doc.getString("createdBy") == currentDni
+        }
+    }
     // — ESTADOS NUEVOS —
     var ruc         by remember { mutableStateOf("") }
     var rucError    by remember { mutableStateOf(false) }
@@ -145,11 +153,13 @@ fun StoreSettingsScreen(
                     }
                 },
                 actions = {
+                    if (isOwner) {
                     IconButton(onClick = { showNewRoleDialog = true }) {
                         Icon(Icons.Default.Build, contentDescription = "Administrar Roles")
                     }
                     IconButton(onClick = { showDeleteDialog = true }) {
                         Icon(Icons.Default.DeleteForever, contentDescription = "Eliminar Tienda", tint = Color.Red)
+                    }
                     }
                 }
             )
@@ -168,59 +178,62 @@ fun StoreSettingsScreen(
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
             // — NUEVO: Card para editar RUC —
-            item {
-                Card {
-                    Column(Modifier.padding(16.dp)) {
-                        Text("RUC de la tienda", style = MaterialTheme.typography.titleMedium)
-                        Spacer(Modifier.height(8.dp))
+            if (isOwner) {
+                item {
+                    Card {
+                        Column(Modifier.padding(16.dp)) {
+                            Text("RUC de la tienda", style = MaterialTheme.typography.titleMedium)
+                            Spacer(Modifier.height(8.dp))
 
-                        OutlinedTextField(
-                            value = ruc,
-                            onValueChange = { new ->
-                                // sólo dígitos y como máximo 11
-                                ruc = new.filter { it.isDigit() }.take(11)
-                                rucError = false
-                            },
-                            label = { Text("RUC (11 dígitos)") },
-                            singleLine = true,
-                            isError = ruc.isNotEmpty() && ruc.length != 11,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        if (ruc.isNotEmpty() && ruc.length != 11) {
-                            Text("El RUC debe tener exactamente 11 dígitos", color = MaterialTheme.colorScheme.error)
-                        }
-                        if (rucError) {
-                            Text("Este RUC ya existe para otra tienda", color = MaterialTheme.colorScheme.error)
-                        }
+                            OutlinedTextField(
+                                value = ruc,
+                                onValueChange = { new ->
+                                    ruc = new.filter { it.isDigit() }.take(11)
+                                    rucError = false
+                                },
+                                label = { Text("RUC (11 dígitos)") },
+                                singleLine = true,
+                                isError = ruc.isNotEmpty() && ruc.length != 11,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            if (ruc.isNotEmpty() && ruc.length != 11) {
+                                Text("El RUC debe tener exactamente 11 dígitos",
+                                    color = MaterialTheme.colorScheme.error)
+                            }
+                            if (rucError) {
+                                Text("Este RUC ya existe para otra tienda",
+                                    color = MaterialTheme.colorScheme.error)
+                            }
 
-                        Spacer(Modifier.height(8.dp))
-                        Button(
-                            onClick = {
-                                scope.launch {
-                                    // Comprobamos unicidad excluyendo esta tienda
-                                    val clash = db.collection("stores")
-                                        .whereEqualTo("RUC", ruc)
-                                        .get()
-                                        .await()
-                                        .documents
-                                        .any { it.id != storeId }
-
-                                    if (clash) {
-                                        rucError = true
-                                    } else {
-                                        db.collection("stores")
-                                            .document(storeId)
-                                            .update("RUC", ruc)
+                            Spacer(Modifier.height(8.dp))
+                            Button(
+                                onClick = {
+                                    scope.launch {
+                                        val clash = db.collection("stores")
+                                            .whereEqualTo("RUC", ruc)
+                                            .get()
                                             .await()
-                                        Toast.makeText(ctx, "RUC actualizado", Toast.LENGTH_SHORT).show()
+                                            .documents
+                                            .any { it.id != storeId }
+                                        if (clash) {
+                                            rucError = true
+                                        } else {
+                                            db.collection("stores")
+                                                .document(storeId)
+                                                .update("RUC", ruc)
+                                                .await()
+                                            Toast.makeText(ctx,
+                                                "RUC actualizado",
+                                                Toast.LENGTH_SHORT).show()
+                                        }
                                     }
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            enabled = (ruc.length == 11)  // sólo activo cuando sean 11 dígitos
-                        ) {
-                            Text("Guardar RUC")
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = (ruc.length == 11)
+                            ) {
+                                Text("Guardar RUC")
+                            }
                         }
                     }
                 }
