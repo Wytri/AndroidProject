@@ -1,6 +1,8 @@
 // WorkPlaceScreen.kt
 package com.example.fastped
-
+import com.google.firebase.Timestamp
+import android.os.Build
+import androidx.annotation.RequiresApi
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeOut
@@ -24,12 +26,16 @@ import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
-import java.security.Timestamp
+
 import java.text.DateFormat
+import java.text.SimpleDateFormat
+import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
 import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 
 // Combina un Pedido con sus productos
 private data class PedidoConProductos(
@@ -37,6 +43,7 @@ private data class PedidoConProductos(
     val productos: List<PedidoProducto>
 )
 
+@RequiresApi(Build.VERSION_CODES.O)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WorkPlaceScreen(
@@ -137,7 +144,11 @@ fun WorkPlaceScreen(
             "Recepcionista"  -> TabItem("Recepción",   Icons.Default.RoomService) { RecepcionistaScreen(storeId) }
             "Cocinero"       -> TabItem("Cocina",       Icons.Default.Kitchen)     { CocineroScreen(storeId, userDni) }
             "Despachador"    -> TabItem("Despacho",     Icons.Default.LocalShipping){ DespachadorScreen(storeId, userDni) }
-            "Contabilidad"   -> TabItem("Contabilidad", Icons.Default.DateRange)    { ContabilidadScreen(storeId) }
+            "Contabilidad" -> TabItem(
+                title  = "Contabilidad",
+                icon   = Icons.Default.DateRange,
+                screen = { ContabilidadScreen(storeId) }
+            )
             "Administrador"  -> TabItem("Admin", Icons.Default.Settings)     { AdminScreen(nav, storeId, userDni) }
             else             -> null
         }
@@ -615,14 +626,209 @@ fun DespachadorScreen(storeId: String, userDni: String) {
     }
 }
 
+@RequiresApi(Build.VERSION_CODES.O)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ContabilidadScreen(storeId: String) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text("Administración (pendiente)")
+    val db   = Firebase.firestore
+    val zone = ZoneId.systemDefault()
+    val scope = rememberCoroutineScope()
+
+    // — Calendario —
+    var selectedDate by remember { mutableStateOf(LocalDate.now()) }
+    var showDatePicker by remember { mutableStateOf(false) }
+    val datePickerState = rememberDatePickerState(
+        initialSelectedDateMillis =
+            selectedDate.atStartOfDay(zone).toInstant().toEpochMilli()
+    )
+
+    // — Estados internos —
+    data class ContItem(
+        val pedido: Pedido,
+        val productos: List<PedidoProducto>,
+        val pedidoId: String
+    )
+
+    var itemsByDay     by remember { mutableStateOf<List<ContItem>>(emptyList()) }
+    var orderTotals    by remember { mutableStateOf<Map<String, Double>>(emptyMap()) }
+    var dailyTotal     by remember { mutableStateOf(0.0) }
+    var monthlyAverage by remember { mutableStateOf(0.0) }
+    var isLoading      by remember { mutableStateOf(true) }
+    var errorMsg       by remember { mutableStateOf<String?>(null) }
+
+    // — Efecto: recarga de datos al cambiar fecha o storeId —
+    LaunchedEffect(storeId, selectedDate) {
+        isLoading = true
+        errorMsg  = null
+        try {
+            // 1) Traemos TODOS los pedidos COMPLETADOS
+            val allCompleted = db.collection("orders")
+                .whereEqualTo("estado", "Completado")
+                .get()
+                .await()
+
+            // 2) Filtramos los de la fecha seleccionada
+            val listaHoy   = mutableListOf<ContItem>()
+            val mapaTotales = mutableMapOf<String, Double>()
+            var sumaDia = 0.0
+
+            allCompleted.documents.forEach { doc ->
+                val pedido = doc.toObject(Pedido::class.java) ?: return@forEach
+                val ts     = pedido.fechaCompra ?: return@forEach
+                val ld     = ts.toDate().toInstant().atZone(zone).toLocalDate()
+                if (ld == selectedDate) {
+                    val pid   = doc.id
+                    val total = pedido.total
+                    // Traemos productos de esta tienda
+                    val prodsSnap = doc.reference
+                        .collection("productos")
+                        .whereEqualTo("IDRes", storeId)
+                        .get().await()
+                    val prods = prodsSnap.documents
+                        .mapNotNull { it.toObject(PedidoProducto::class.java) }
+                    if (prods.isNotEmpty()) {
+                        listaHoy += ContItem(pedido, prods, pid)
+                        mapaTotales[pid] = total
+                        sumaDia += total
+                    }
+                }
+            }
+
+            itemsByDay  = listaHoy
+            orderTotals = mapaTotales
+            dailyTotal  = sumaDia
+
+            // 3) Calculamos el promedio mensual, filtrando en memoria
+            val totPorDia = mutableMapOf<LocalDate, Double>()
+            allCompleted.documents.forEach { doc ->
+                val pedido = doc.toObject(Pedido::class.java) ?: return@forEach
+                val ts     = pedido.fechaCompra ?: return@forEach
+                val ld     = ts.toDate().toInstant().atZone(zone).toLocalDate()
+                if (ld.year == selectedDate.year && ld.month == selectedDate.month) {
+                    totPorDia[ld] = (totPorDia[ld] ?: 0.0) + pedido.total
+                }
+            }
+            monthlyAverage = if (totPorDia.isEmpty()) 0.0 else totPorDia.values.average()
+
+        } catch (e: Exception) {
+            errorMsg = e.localizedMessage
+        } finally {
+            isLoading = false
+        }
+    }
+
+    // — UI —
+    Column(
+        Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        // Selector de fecha
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedButton(onClick = { showDatePicker = true }) {
+                Icon(Icons.Default.DateRange, contentDescription = "Calendario")
+                Spacer(Modifier.width(8.dp))
+                Text(selectedDate.toString())
+            }
+        }
+        if (showDatePicker) {
+            DatePickerDialog(
+                onDismissRequest = { showDatePicker = false },
+                confirmButton = {
+                    TextButton(onClick = {
+                        datePickerState.selectedDateMillis?.let { ms ->
+                            selectedDate = Instant.ofEpochMilli(ms)
+                                .atZone(zone)
+                                .toLocalDate()
+                        }
+                        showDatePicker = false
+                    }) { Text("OK") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDatePicker = false }) { Text("Cancelar") }
+                }
+            ) {
+                DatePicker(state = datePickerState)
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        when {
+            isLoading -> Box(Modifier.fillMaxSize(), Alignment.Center) {
+                CircularProgressIndicator()
+            }
+            errorMsg != null -> Text(
+                "Error: $errorMsg",
+                color = MaterialTheme.colorScheme.error
+            )
+            itemsByDay.isEmpty() -> Text(
+                "No hay ventas completas el $selectedDate",
+                style = MaterialTheme.typography.bodyLarge
+            )
+            else -> {
+                LazyColumn(
+                    Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(itemsByDay) { ci ->
+                        val totalPedido = orderTotals[ci.pedidoId] ?: 0.0
+                        Card(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(12.dp)) {
+                                Text(
+                                    "Pedido: ${ci.pedidoId}",
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                ci.productos.forEach { p ->
+                                    Row(
+                                        Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(p.NombreProducto)
+                                        Text("x${p.Cantidad}")
+                                    }
+                                }
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    "Total pedido: ${"%.2f".format(totalPedido)}",
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                Text(
+                    "Ganancia del día: ${"%.2f".format(dailyTotal)}",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Promedio mensual: ${"%.2f".format(monthlyAverage)}",
+                    style = MaterialTheme.typography.bodyLarge
+                )
+            }
+        }
     }
 }
 
+/**
+ * Convierte un timestamp en milisegundos a una fecha con formato "dd/MM/yyyy",
+ * teniendo en cuenta la zona horaria local para evitar desfases.
+ */
+fun Long.convertMillisToDate(): String {
+    val calendar = Calendar.getInstance().apply {
+        timeInMillis = this@convertMillisToDate
+        // Ajustar por offset de zona y DST
+        val offset = get(Calendar.ZONE_OFFSET) + get(Calendar.DST_OFFSET)
+        add(Calendar.MILLISECOND, -offset)
+    }
+    val formatter = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
+    return formatter.format(calendar.time)
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
