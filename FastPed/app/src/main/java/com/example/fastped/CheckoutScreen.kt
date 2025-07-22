@@ -22,6 +22,7 @@ import com.example.fastped.util.base64ToImageBitmap
 import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
 import kotlinx.coroutines.tasks.await
+//import com.example.fastped.util.PaymentUtils
 
 private data class CartItem(
     val docId: String,
@@ -124,6 +125,10 @@ fun CheckoutScreen(
                                     val price = p.PrecioUnitario * (1 - desc / 100.0)
                                     (price * p.Cantidad * 100).toInt()
                                 }
+
+                                //val subtotal = PaymentUtils.calculateTotal(items.map { it.producto })
+                                // si necesitas céntimos:
+                                //val subtotalCents2 = (subtotal * 100).toInt()
 
                                 Card(
                                     modifier = Modifier.fillMaxWidth(),

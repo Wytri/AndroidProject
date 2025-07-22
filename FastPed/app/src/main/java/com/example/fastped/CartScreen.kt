@@ -24,6 +24,7 @@ import com.example.fastped.util.base64ToImageBitmap
 import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
 import kotlinx.coroutines.launch
+//import com.example.fastped.
 
 // 1) RENOMBRAMOS el helper para no repetir nombres
 private data class CartEntry(
@@ -71,6 +72,7 @@ fun CartScreen(
         val pf   = p.PrecioUnitario * (1 - desc / 100.0)
         pf * p.Cantidad
     }
+    // val total2 = PaymentUtils.calculateTotal(cartItems.map { it.producto })
 
     Scaffold(
         topBar = { CenterAlignedTopAppBar(title = { Text("Carrito") }) }
