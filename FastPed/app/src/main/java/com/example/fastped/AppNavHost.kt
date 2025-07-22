@@ -1,7 +1,9 @@
 // AppNavHost.kt
 package com.example.fastped
 
+import android.os.Build
 import android.widget.Toast
+import androidx.annotation.RequiresApi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -40,6 +42,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import com.example.fastped.model.Usuario
+//import com.example.fastped.ui.NotificationsScreen
 import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
 import kotlinx.coroutines.launch
@@ -209,6 +212,7 @@ fun AppNavHost() {
     }
 
     // 3) Función única con TODO tu NavGraph original
+    @RequiresApi(Build.VERSION_CODES.O)
     @Composable
     fun MainNavHost(modifier: Modifier = Modifier) {
         NavHost(
@@ -356,7 +360,9 @@ fun AppNavHost() {
                 )
             }
 
-            composable("notif") { /* TODO */ }
+            composable("notif") {
+                //NotificationsScreen(currentUserId = currentDni!!)
+            }
 
             // PROFILE
             composable(

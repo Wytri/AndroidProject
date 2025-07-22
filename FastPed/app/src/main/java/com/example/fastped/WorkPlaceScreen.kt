@@ -328,16 +328,18 @@ fun CocineroScreen(storeId: String, userDni: String) {
     var errorMsg  by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(storeId) {
+        isLoading = true
+        errorMsg  = null
         try {
-            val colaList = mutableListOf<PedidoProducto>()
-            val prepList = mutableListOf<PedidoProducto>()
-
-            // 1) Traer todos los pedidos
+            // 1) Recuperamos TODOS los pedidos
             val ordersSnap = db.collection("orders")
                 .get()
                 .await()
 
-            // 2) Para cada pedido, leer su sub-colección "productos" y filtrar localmente
+            val colaList = mutableListOf<PedidoProducto>()
+            val prepList = mutableListOf<PedidoProducto>()
+
+            // 2) Por cada pedido, leemos SU subcolección productos y filtramos en memoria
             for (orderDoc in ordersSnap.documents) {
                 val pid = orderDoc.id
                 val prodsSnap = db.collection("orders")
@@ -348,9 +350,10 @@ fun CocineroScreen(storeId: String, userDni: String) {
 
                 val productos = prodsSnap.documents
                     .mapNotNull { it.toObject(PedidoProducto::class.java) }
+                    // primero limitamos a TU tienda:
                     .filter { it.IDRes == storeId }
 
-                // 3) Separar por estado
+                // 3) Luego separamos por estado en Kotlin
                 colaList += productos.filter {
                     it.Estado == EstadosPedidoProducto.EN_COLA
                 }
@@ -368,7 +371,7 @@ fun CocineroScreen(storeId: String, userDni: String) {
         }
     }
 
-    // ------------- UI -------------
+    // — UI —
     if (isLoading) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
@@ -391,7 +394,10 @@ fun CocineroScreen(storeId: String, userDni: String) {
                 .fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            items(enCola, key = { it.IDProducto }) { prod ->
+            items(
+                items = enCola,
+                key   = { "${it.IDPedido}_${it.IDProducto}" }  // clave única
+            ) { prod ->
                 Card(Modifier.fillMaxWidth()) {
                     Row(
                         Modifier
@@ -405,13 +411,13 @@ fun CocineroScreen(storeId: String, userDni: String) {
                         }
                         Button(onClick = {
                             scope.launch {
-                                // actualizar en Firestore
                                 db.collection("orders").document(prod.IDPedido)
                                     .collection("productos").document(prod.IDProducto)
                                     .update("Estado", EstadosPedidoProducto.EN_PREPARACION)
                                     .await()
-                                // refrescar local
-                                enCola = enCola.filterNot { it.IDProducto == prod.IDProducto }
+                                enCola = enCola.filterNot {
+                                    it.IDPedido == prod.IDPedido && it.IDProducto == prod.IDProducto
+                                }
                                 enPrep = enPrep + prod.copy(Estado = EstadosPedidoProducto.EN_PREPARACION)
                             }
                         }) {
@@ -432,7 +438,10 @@ fun CocineroScreen(storeId: String, userDni: String) {
                 .fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            items(enPrep, key = { it.IDProducto }) { prod ->
+            items(
+                items = enPrep,
+                key   = { "${it.IDPedido}_${it.IDProducto}" }  // clave única
+            ) { prod ->
                 var showConfirm by remember { mutableStateOf(false) }
 
                 Card(Modifier.fillMaxWidth()) {
@@ -455,17 +464,18 @@ fun CocineroScreen(storeId: String, userDni: String) {
                 if (showConfirm) {
                     AlertDialog(
                         onDismissRequest = { showConfirm = false },
-                        title = { Text("Confirmar") },
-                        text = { Text("Marcar '${prod.NombreProducto}' como listo para despacho?") },
+                        title   = { Text("Confirmar") },
+                        text    = { Text("Marcar '${prod.NombreProducto}' como listo para despacho?") },
                         confirmButton = {
-                            TextButton({
+                            TextButton(onClick = {
                                 scope.launch {
                                     db.collection("orders").document(prod.IDPedido)
                                         .collection("productos").document(prod.IDProducto)
                                         .update("Estado", EstadosPedidoProducto.LISTO_PARA_ENTREGAR)
                                         .await()
-                                    // refrescar local
-                                    enPrep = enPrep.filterNot { it.IDProducto == prod.IDProducto }
+                                    enPrep = enPrep.filterNot {
+                                        it.IDPedido == prod.IDPedido && it.IDProducto == prod.IDProducto
+                                    }
                                 }
                                 showConfirm = false
                             }) {
@@ -473,7 +483,7 @@ fun CocineroScreen(storeId: String, userDni: String) {
                             }
                         },
                         dismissButton = {
-                            TextButton({ showConfirm = false }) {
+                            TextButton(onClick = { showConfirm = false }) {
                                 Text("No")
                             }
                         }
