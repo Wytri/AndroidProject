@@ -146,6 +146,17 @@ fun AppNavHost() {
                         },
                         modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
                     )
+                    // ← Aquí añadimos el acceso a WorkPlace para el dueño:
+                    NavigationDrawerItem(
+                        icon = { Icon(Icons.Default.Work, contentDescription = null) },
+                        label = { Text("Mi lugar de trabajo") },
+                        selected = false,
+                        onClick = {
+                            scope.launch { drawerState.close() }
+                            navController.navigate("workPlace/${user.tiendaId}")
+                        },
+                        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                    )
                 }
                 Divider()
             }

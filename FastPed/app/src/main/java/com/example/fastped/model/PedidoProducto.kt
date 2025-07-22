@@ -1,6 +1,7 @@
 package com.example.fastped.model
 
 import com.google.firebase.firestore.PropertyName
+import com.example.fastped.model.EstadosPedidoProducto
 
 data class PedidoProducto(
     @get:PropertyName("IDPedido")    @PropertyName("IDPedido")
@@ -31,5 +32,5 @@ data class PedidoProducto(
     val PhotoBase64: String? = null,
 
     @get:PropertyName("Estado")       @PropertyName("Estado")
-    val Estado: String = "Pendiente a pagar"
+    val Estado: String = EstadosPedidoProducto.RECIBIDO
 )

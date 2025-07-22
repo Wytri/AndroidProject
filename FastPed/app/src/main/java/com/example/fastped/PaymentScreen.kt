@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
+import com.example.fastped.model.EstadosPedidoProducto
 import com.example.fastped.model.Pedido
 import com.example.fastped.model.PedidoProducto
 import com.example.fastped.util.StripeApi
@@ -59,7 +60,7 @@ fun PaymentScreen(
                             // c) Calcula total real (en unidades)
                             val lista = cartSnap.documents.mapNotNull { d ->
                                 d.toObject(PedidoProducto::class.java)
-                                    ?.copy(IDPedido = pedidoId, Estado = "Pagado")
+                                    ?.copy(IDPedido = pedidoId, Estado = EstadosPedidoProducto.RECIBIDO)
                             }
                             val totalReal = lista.sumOf { p ->
                                 val desc = p.Descuento ?: 0.0

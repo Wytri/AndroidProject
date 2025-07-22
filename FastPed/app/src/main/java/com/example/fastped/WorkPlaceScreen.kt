@@ -1,6 +1,9 @@
 // WorkPlaceScreen.kt
 package com.example.fastped
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -13,10 +16,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
+import com.example.fastped.model.EstadosPedidoProducto
 import com.example.fastped.model.Pedido
 import com.example.fastped.model.PedidoProducto
 import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
 // Combina un Pedido con sus productos
@@ -43,6 +48,19 @@ fun WorkPlaceScreen(
     // 1) Cargo roleId del miembro → 2) Cargo lista de permisos
     LaunchedEffect(storeId, userDni) {
         try {
+            // ── 0) Chequeo rápido: ¿es este userDni el createdBy de la tienda?
+            val storeSnap = db.collection("stores")
+                .document(storeId)
+                .get()
+                .await()
+            val ownerDni = storeSnap.getString("createdBy")
+            if (ownerDni == userDni) {
+                // si es dueño, le damos “Administrador” y terminamos
+                permissions = listOf("Administrador")
+                return@LaunchedEffect
+            }
+
+            // ── 1) No es dueño → cargo roleId del miembro
             val memberSnap = db.collection("stores")
                 .document(storeId)
                 .collection("members")
@@ -50,14 +68,13 @@ fun WorkPlaceScreen(
                 .get()
                 .await()
 
-            // Si el doc existe pero no hay roleId asignado, esperamos
             val roleId = memberSnap.getString("roleId")
             if (roleId.isNullOrBlank()) {
                 waitingForRole = true
                 return@LaunchedEffect
             }
 
-            // Si sí hay roleId, vamos por sus permisos
+            // ── 2) Cargo permisos desde la colección roles
             val roleSnap = db.collection("stores")
                 .document(storeId)
                 .collection("roles")
@@ -155,48 +172,44 @@ private data class TabItem(
     val screen: @Composable ()->Unit
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecepcionistaScreen(storeId: String) {
-    val db = Firebase.firestore
+    val db    = Firebase.firestore
+    val scope = rememberCoroutineScope()
 
-    // Agrupa un Pedido con sus productos
-    data class PedidoConProductos(val pedido: Pedido, val productos: List<PedidoProducto>)
+    var prodList  by remember { mutableStateOf<List<PedidoProducto>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+    var errorMsg  by remember { mutableStateOf<String?>(null) }
 
-    var listaPedidos by remember { mutableStateOf<List<PedidoConProductos>>(emptyList()) }
-    var isLoading   by remember { mutableStateOf(true) }
-    var errorMsg    by remember { mutableStateOf<String?>(null) }
+    // Lista de pedidos ya “movidos” para animar su salida
+    val removedPedidos = remember { mutableStateListOf<String>() }
 
     LaunchedEffect(storeId) {
         try {
-            // 1) Traer sólo los pedidos cuyo estado global sea "Pagado"
+            // 1) traer todos los pedidos pagados
             val pedidosSnap = db.collection("orders")
                 .whereEqualTo("estado", "Pagado")
                 .get()
                 .await()
 
-            val resultado = mutableListOf<PedidoConProductos>()
-
-            // 2) Para cada pedido, consulta SU sub-colección "productos" filtrando sólo por IDRes
-            pedidosSnap.documents.mapNotNull { doc ->
-                doc.toObject(Pedido::class.java)?.copy(idPedido = doc.id)
-            }.forEach { pedido ->
+            val lista = mutableListOf<PedidoProducto>()
+            for (pedidoDoc in pedidosSnap.documents) {
+                val pid = pedidoDoc.id
                 val prodsSnap = db.collection("orders")
-                    .document(pedido.idPedido)
+                    .document(pid)
                     .collection("productos")
-                    .whereEqualTo("IDRes", storeId)    // sólo por restaurante
                     .get()
                     .await()
-
-                // Convertir cada doc a PedidoProducto
-                val prods = prodsSnap.documents.mapNotNull { p ->
-                    p.toObject(PedidoProducto::class.java)
-                }
-                if (prods.isNotEmpty()) {
-                    resultado += PedidoConProductos(pedido, prods)
-                }
+                prodsSnap.documents
+                    .mapNotNull { it.toObject(PedidoProducto::class.java) }
+                    .filter {
+                        it.IDRes == storeId &&
+                                it.Estado == EstadosPedidoProducto.RECIBIDO
+                    }
+                    .also { lista += it }
             }
-
-            listaPedidos = resultado
+            prodList = lista
         } catch (e: Exception) {
             errorMsg = e.localizedMessage
         } finally {
@@ -204,64 +217,389 @@ fun RecepcionistaScreen(storeId: String) {
         }
     }
 
-    // UI de carga / error / vacío / lista
     when {
         isLoading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
         }
         errorMsg != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("Error: $errorMsg")
+            Text("Error: $errorMsg", color = MaterialTheme.colorScheme.error)
         }
-        listaPedidos.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("No hay pedidos pagados para esta tienda")
+        prodList.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("No hay productos por procesar")
+        }
+        else -> {
+            // agrupamos por pedido
+            val grouped = prodList.groupBy { it.IDPedido }
+
+            LazyColumn(
+                Modifier
+                    .fillMaxSize()
+                    .padding(8.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                grouped.forEach { (pedidoId, productos) ->
+                    item(key = pedidoId) {
+                        AnimatedVisibility(
+                            visible = pedidoId !in removedPedidos,
+                            exit = fadeOut(animationSpec = tween(durationMillis = 300))
+                        ) {
+                            Card(Modifier.fillMaxWidth()) {
+                                Column(Modifier.padding(12.dp)) {
+                                    Text("Pedido: $pedidoId",
+                                        style = MaterialTheme.typography.titleMedium)
+                                    Spacer(Modifier.height(8.dp))
+
+                                    productos.forEach { prod ->
+                                        Row(
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column(Modifier.weight(1f)) {
+                                                Text(prod.NombreProducto,
+                                                    style = MaterialTheme.typography.bodyLarge)
+                                                Text("Cantidad: ${prod.Cantidad}",
+                                                    style = MaterialTheme.typography.bodySmall)
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(Modifier.height(12.dp))
+
+                                    Button(
+                                        onClick = {
+                                            scope.launch {
+                                                // 1) actualizar todos los productos en Firestore
+                                                productos.forEach { prod ->
+                                                    db.collection("orders")
+                                                        .document(prod.IDPedido)
+                                                        .collection("productos")
+                                                        .document(prod.IDProducto)
+                                                        .update("Estado", EstadosPedidoProducto.EN_COLA)
+                                                }
+                                                // 2) marcar para animar salida y quitar del estado local
+                                                removedPedidos += pedidoId
+                                                prodList = prodList.filterNot { it.IDPedido == pedidoId }
+                                            }
+                                        },
+                                        modifier = Modifier.align(Alignment.End)
+                                    ) {
+                                        Text("Poner todos en cola")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+// —————————————————————————————————————————————————————————————————————————
+// Placeholders para el resto; cuando lo completes, integra tu lógica:
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CocineroScreen(storeId: String, userDni: String) {
+    val db    = Firebase.firestore
+    val scope = rememberCoroutineScope()
+
+    var enCola    by remember { mutableStateOf<List<PedidoProducto>>(emptyList()) }
+    var enPrep    by remember { mutableStateOf<List<PedidoProducto>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+    var errorMsg  by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(storeId) {
+        try {
+            val colaList = mutableListOf<PedidoProducto>()
+            val prepList = mutableListOf<PedidoProducto>()
+
+            // 1) Traer todos los pedidos
+            val ordersSnap = db.collection("orders")
+                .get()
+                .await()
+
+            // 2) Para cada pedido, leer su sub-colección "productos" y filtrar localmente
+            for (orderDoc in ordersSnap.documents) {
+                val pid = orderDoc.id
+                val prodsSnap = db.collection("orders")
+                    .document(pid)
+                    .collection("productos")
+                    .get()
+                    .await()
+
+                val productos = prodsSnap.documents
+                    .mapNotNull { it.toObject(PedidoProducto::class.java) }
+                    .filter { it.IDRes == storeId }
+
+                // 3) Separar por estado
+                colaList += productos.filter {
+                    it.Estado == EstadosPedidoProducto.EN_COLA
+                }
+                prepList += productos.filter {
+                    it.Estado == EstadosPedidoProducto.EN_PREPARACION
+                }
+            }
+
+            enCola = colaList
+            enPrep = prepList
+        } catch (e: Exception) {
+            errorMsg = e.localizedMessage
+        } finally {
+            isLoading = false
+        }
+    }
+
+    // ------------- UI -------------
+    if (isLoading) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+        return
+    }
+    errorMsg?.let { msg ->
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("Error: $msg", color = MaterialTheme.colorScheme.error)
+        }
+        return
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        // — En cola —
+        Text("En cola", Modifier.padding(8.dp), style = MaterialTheme.typography.titleMedium)
+        LazyColumn(
+            Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            items(enCola, key = { it.IDProducto }) { prod ->
+                Card(Modifier.fillMaxWidth()) {
+                    Row(
+                        Modifier
+                            .padding(12.dp)
+                            .fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(prod.NombreProducto, style = MaterialTheme.typography.bodyLarge)
+                            Text("Cantidad: ${prod.Cantidad}", style = MaterialTheme.typography.bodySmall)
+                        }
+                        Button(onClick = {
+                            scope.launch {
+                                // actualizar en Firestore
+                                db.collection("orders").document(prod.IDPedido)
+                                    .collection("productos").document(prod.IDProducto)
+                                    .update("Estado", EstadosPedidoProducto.EN_PREPARACION)
+                                    .await()
+                                // refrescar local
+                                enCola = enCola.filterNot { it.IDProducto == prod.IDProducto }
+                                enPrep = enPrep + prod.copy(Estado = EstadosPedidoProducto.EN_PREPARACION)
+                            }
+                        }) {
+                            Text("Preparar")
+                        }
+                    }
+                }
+            }
+        }
+
+        Divider()
+
+        // — En preparación —
+        Text("En preparación", Modifier.padding(8.dp), style = MaterialTheme.typography.titleMedium)
+        LazyColumn(
+            Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            items(enPrep, key = { it.IDProducto }) { prod ->
+                var showConfirm by remember { mutableStateOf(false) }
+
+                Card(Modifier.fillMaxWidth()) {
+                    Row(
+                        Modifier
+                            .padding(12.dp)
+                            .fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(prod.NombreProducto, style = MaterialTheme.typography.bodyLarge)
+                            Text("Cantidad: ${prod.Cantidad}", style = MaterialTheme.typography.bodySmall)
+                        }
+                        Button(onClick = { showConfirm = true }) {
+                            Text("Listo")
+                        }
+                    }
+                }
+
+                if (showConfirm) {
+                    AlertDialog(
+                        onDismissRequest = { showConfirm = false },
+                        title = { Text("Confirmar") },
+                        text = { Text("Marcar '${prod.NombreProducto}' como listo para despacho?") },
+                        confirmButton = {
+                            TextButton({
+                                scope.launch {
+                                    db.collection("orders").document(prod.IDPedido)
+                                        .collection("productos").document(prod.IDProducto)
+                                        .update("Estado", EstadosPedidoProducto.LISTO_PARA_ENTREGAR)
+                                        .await()
+                                    // refrescar local
+                                    enPrep = enPrep.filterNot { it.IDProducto == prod.IDProducto }
+                                }
+                                showConfirm = false
+                            }) {
+                                Text("Sí")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton({ showConfirm = false }) {
+                                Text("No")
+                            }
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DespachadorScreen(storeId: String, userDni: String) {
+    val db    = Firebase.firestore
+    val scope = rememberCoroutineScope()
+
+    // Modelo local para la UI
+    data class DispatcherOrder(
+        val pedidoId: String,
+        val clienteId: String,
+        val clienteNombre: String,
+        val productos: List<PedidoProducto>
+    )
+
+    // Estado
+    var ordersToDeliver by remember { mutableStateOf<List<DispatcherOrder>>(emptyList()) }
+    var isLoading       by remember { mutableStateOf(true) }
+    var errorMsg        by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(storeId) {
+        try {
+            // 1) Traer todos los pedidos
+            val headersSnap = db.collection("orders")
+                .get()
+                .await()
+
+            val lista = mutableListOf<DispatcherOrder>()
+            for (header in headersSnap.documents) {
+                val pedidoId  = header.id
+                val clienteId = header.getString("idcliente").orEmpty()
+
+                // 2) Traer subcolección de productos y filtrar por tienda + listos para entregar
+                val prodsSnap = db.collection("orders")
+                    .document(pedidoId)
+                    .collection("productos")
+                    .get()
+                    .await()
+                val prods = prodsSnap.documents
+                    .mapNotNull { it.toObject(PedidoProducto::class.java) }
+                    .filter { it.IDRes == storeId && it.Estado == EstadosPedidoProducto.LISTO_PARA_ENTREGAR }
+
+                if (prods.isNotEmpty()) {
+                    // 3) Recuperar nombre del cliente
+                    val userDoc = db.collection("users")
+                        .document(clienteId)
+                        .get()
+                        .await()
+                    val nom  = userDoc.getString("nombre").orEmpty()
+                    val ape  = userDoc.getString("apellido").orEmpty()
+                    val full = listOf(nom, ape).filter { it.isNotBlank() }.joinToString(" ")
+
+                    lista += DispatcherOrder(
+                        pedidoId       = pedidoId,
+                        clienteId      = clienteId,
+                        clienteNombre  = if (full.isNotBlank()) full else clienteId,
+                        productos      = prods
+                    )
+                }
+            }
+            ordersToDeliver = lista
+        } catch (e: Exception) {
+            errorMsg = e.localizedMessage
+        } finally {
+            isLoading = false
+        }
+    }
+
+    // ── UI ──
+    when {
+        isLoading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+        errorMsg != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("Error: $errorMsg", color = MaterialTheme.colorScheme.error)
+        }
+        ordersToDeliver.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("No hay pedidos listos para entregar")
         }
         else -> LazyColumn(
             Modifier
                 .fillMaxSize()
                 .padding(8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            items(listaPedidos) { pp ->
-                Card(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp),
-                    elevation = CardDefaults.cardElevation(4.dp)
-                ) {
+            items(ordersToDeliver, key = { it.pedidoId }) { order ->
+                Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(12.dp)) {
-                        Text("Pedido: ${pp.pedido.idPedido}", style = MaterialTheme.typography.titleMedium)
-                        Text("Cliente: ${pp.pedido.idCliente}")
-                        Text("Fecha: ${pp.pedido.fechaCompra?.toDate()}")
-                        Text("Total: S/ ${pp.pedido.total}")
-
+                        Text("Pedido: ${order.pedidoId}", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Cliente: ${order.clienteNombre} (${order.clienteId})",
+                            style = MaterialTheme.typography.bodySmall
+                        )
                         Spacer(Modifier.height(8.dp))
-                        Text("Productos:", style = MaterialTheme.typography.titleSmall)
-                        pp.productos.forEach { prod ->
+
+                        order.productos.forEach { prod ->
                             Row(
                                 Modifier
                                     .fillMaxWidth()
                                     .padding(vertical = 4.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column {
+                                Column(Modifier.weight(1f)) {
                                     Text(prod.NombreProducto, style = MaterialTheme.typography.bodyLarge)
-                                    Text(prod.Descripcion,   style = MaterialTheme.typography.bodySmall)
+                                    Text("Cantidad: ${prod.Cantidad}", style = MaterialTheme.typography.bodySmall)
                                 }
-                                Text("x${prod.Cantidad}")
                             }
                         }
 
-                        Spacer(Modifier.height(8.dp))
+                        Spacer(Modifier.height(12.dp))
                         Button(
                             onClick = {
-                                // Marca el pedido global como "En espera"
-                                db.collection("orders")
-                                    .document(pp.pedido.idPedido)
-                                    .update("estado", "En espera")
+                                scope.launch {
+                                    // 4a) Marcar cada producto como ENTREGADO
+                                    order.productos.forEach { prod ->
+                                        db.collection("orders")
+                                            .document(order.pedidoId)
+                                            .collection("productos")
+                                            .document(prod.IDProducto)
+                                            .update("Estado", EstadosPedidoProducto.ENTREGADO)
+                                            .await()
+                                    }
+                                    // 4b) Actualizar estado global del pedido
+                                    db.collection("orders")
+                                        .document(order.pedidoId)
+                                        .update("estado", "Completado")
+                                        .await()
+                                    // 4c) Eliminar de la lista local para refrescar la UI
+                                    ordersToDeliver = ordersToDeliver
+                                        .filterNot { it.pedidoId == order.pedidoId }
+                                }
                             },
                             modifier = Modifier.align(Alignment.End)
                         ) {
-                            Text("Confirmar Recepción")
+                            Text("Entregar pedido")
                         }
                     }
                 }
@@ -270,18 +608,8 @@ fun RecepcionistaScreen(storeId: String) {
     }
 }
 
-// —————————————————————————————————————————————————————————————————————————
-// Placeholders para el resto; cuando lo completes, integra tu lógica:
-@Composable fun CocineroScreen(storeId: String, userDni: String) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text("Cocina (pendiente)")
-    }
-}
-@Composable fun DespachadorScreen(storeId: String, userDni: String) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text("Despacho (pendiente)")
-    }
-}
+
+
 @Composable fun ContabilidadScreen(storeId: String) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Text("Contabilidad (pendiente)")

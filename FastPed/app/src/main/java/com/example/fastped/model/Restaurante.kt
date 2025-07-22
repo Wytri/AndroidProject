@@ -6,6 +6,7 @@ import com.google.firebase.Timestamp
 data class Restaurante(
     val IDRes: String = "",                       // ← Valor por defecto
     val CodigoUnico: String? = null,
+    val RUC: String = "",                   // ← NUEVO campo
     val Nombre: String = "",                      // ← Valor por defecto
     val Descripcion: String = "",                 // ← Valor por defecto
     val Direccion: String = "",                   // ← Valor por defecto
@@ -18,6 +19,7 @@ data class Restaurante(
 ) {
     fun toMap(): Map<String, Any?> = mapOf(
         "CodigoUnico"     to CodigoUnico,
+        "RUC"             to RUC,            // ← incluimos RUC
         "Nombre"          to Nombre,
         "Descripcion"     to Descripcion,
         "Direccion"       to Direccion,
