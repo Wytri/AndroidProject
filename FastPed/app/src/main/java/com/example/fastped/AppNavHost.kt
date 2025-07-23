@@ -42,7 +42,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import com.example.fastped.model.Usuario
-//import com.example.fastped.ui.NotificationsScreen
+import com.example.fastped.ui.NotificationsScreen
 import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
 import kotlinx.coroutines.launch
@@ -361,7 +361,7 @@ fun AppNavHost() {
             }
 
             composable("notif") {
-                //NotificationsScreen(currentUserId = currentDni!!)
+                NotificationsScreen(currentUserId = currentDni!!)
             }
 
             // PROFILE
